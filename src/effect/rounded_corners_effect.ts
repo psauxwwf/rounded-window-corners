@@ -27,6 +27,26 @@ export const RoundedCornersEffect = GObject.registerClass(
             return snippet;
         }
 
+        vfunc_paint(
+            node: Clutter.PaintNode,
+            paintContext: Clutter.PaintContext,
+            flags: Clutter.EffectPaintFlags,
+        ) {
+            const actor = this.get_actor();
+            const captureName = 'bms-window-backdrop-capture';
+            let paintFlags = flags;
+            // Blur my Shell captures a live backdrop before this offscreen pass.
+            // Repaint its input even when the window contents did not change.
+            if (
+                actor?.get_effect(captureName) ||
+                actor?.get_parent()?.get_effect(captureName)
+            ) {
+                // biome-ignore lint/suspicious/noBitwiseOperators: Combine Clutter paint flags.
+                paintFlags |= Clutter.EffectPaintFlags.ACTOR_DIRTY;
+            }
+            super.vfunc_paint(node, paintContext, paintFlags);
+        }
+
         /**
          * Update uniforms of the shader.
          * For more information, see the comments in the shader file.

@@ -1,5 +1,6 @@
 /** @file Provides various utility functions used withing signal handling code. */
 
+import type Clutter from 'gi://Clutter';
 import type St from 'gi://St';
 import type {RoundedCornersEffect} from '../effect/rounded_corners_effect.js';
 import type {
@@ -24,14 +25,29 @@ import {getPref} from '../utils/settings.js';
 /**
  * Get the actor that rounded corners should be applied to.
  * In Wayland, the effect is applied to WindowActor, but in X11, it is applied
- * to WindowActor.first_child.
+ * to the first non-backdrop child of WindowActor.
  *
  * @param actor - The window actor to unwrap.
  * @returns The correct actor that the effect should be applied to.
  */
 export function unwrapActor(actor: RoundedWindowActor) {
     const type = actor.metaWindow.get_client_type();
-    return type === Meta.WindowClientType.X11 ? actor.get_first_child() : actor;
+    if (type !== Meta.WindowClientType.X11) return actor;
+
+    // Blur my Shell can insert its backdrop before the actual X11 surface.
+    const blurActor = (
+        actor.metaWindow as Meta.Window &
+            Partial<Record<'blur_actor', Clutter.Actor>>
+    ).blur_actor;
+    return (
+        actor
+            .get_children()
+            .find(
+                child =>
+                    child !== blurActor &&
+                    child.name !== 'bms-application-blurred-widget',
+            ) ?? null
+    );
 }
 
 /**
@@ -67,14 +83,8 @@ type RoundedCornersEffectType = InstanceType<typeof RoundedCornersEffect>;
  * @returns The corresponding Clutter.Effect object.
  */
 export function getRoundedCornersEffect(actor: RoundedWindowActor) {
-    const win = actor.metaWindow;
-    const name = ROUNDED_CORNERS_EFFECT;
-    const isXwayland =
-        win.get_client_type() === Meta.WindowClientType.X11 && actor.firstChild;
-
-    return isXwayland
-        ? (actor.firstChild.get_effect(name) as RoundedCornersEffectType)
-        : (actor.get_effect(name) as RoundedCornersEffectType);
+    return (unwrapActor(actor)?.get_effect(ROUNDED_CORNERS_EFFECT) ??
+        null) as RoundedCornersEffectType | null;
 }
 
 /** Compute outer bounds for rounded corners of a window
