@@ -5,6 +5,7 @@ import type {Bounds, RoundedCornerSettings} from '../utils/types.js';
 import Clutter from 'gi://Clutter';
 import Cogl from 'gi://Cogl';
 import GObject from 'gi://GObject';
+import Shell from 'gi://Shell';
 
 import {readShader} from '../utils/file.js';
 import {getPref} from '../utils/settings.js';
@@ -16,15 +17,34 @@ const [declarations, code] = await readShader(
 
 export const RoundedCornersEffect = GObject.registerClass(
     {},
-    class Effect extends Clutter.ShaderEffect {
-        vfunc_get_static_snippet() {
-            const snippet = Cogl.Snippet.new(
+    class Effect extends Shell.GLSLEffect {
+        private readonly uniforms: Record<string, number> = {};
+
+        constructor() {
+            super();
+
+            // Uniform locations belong to this effect's pipeline, not the class.
+            for (const name of [
+                'bounds',
+                'clipRadius',
+                'borderWidth',
+                'borderColor',
+                'borderedAreaBounds',
+                'borderedAreaClipRadius',
+                'pixelStep',
+                'exponent',
+            ]) {
+                this.uniforms[name] = this.get_uniform_location(name);
+            }
+        }
+
+        vfunc_build_pipeline() {
+            this.add_glsl_snippet(
                 Cogl.SnippetHook.FRAGMENT,
                 declarations,
-                '',
+                code,
+                false,
             );
-            snippet.set_post(code);
-            return snippet;
         }
 
         vfunc_paint(
@@ -97,16 +117,20 @@ export const RoundedCornersEffect = GObject.registerClass(
             }
             borderedAreaRadius *= radius / outerRadius;
 
-            this.set_uniform_float('bounds', 4, bounds);
-            this.set_uniform_float('clipRadius', 1, [radius]);
-            this.set_uniform_float('borderWidth', 1, [borderWidth]);
-            this.set_uniform_float('borderColor', 4, borderColor);
-            this.set_uniform_float('borderedAreaBounds', 4, borderedAreaBounds);
-            this.set_uniform_float('borderedAreaClipRadius', 1, [
+            this.set_uniform_float(this.uniforms.bounds, 4, bounds);
+            this.set_uniform_float(this.uniforms.clipRadius, 1, [radius]);
+            this.set_uniform_float(this.uniforms.borderWidth, 1, [borderWidth]);
+            this.set_uniform_float(this.uniforms.borderColor, 4, borderColor);
+            this.set_uniform_float(
+                this.uniforms.borderedAreaBounds,
+                4,
+                borderedAreaBounds,
+            );
+            this.set_uniform_float(this.uniforms.borderedAreaClipRadius, 1, [
                 borderedAreaRadius,
             ]);
-            this.set_uniform_float('pixelStep', 2, pixelStep);
-            this.set_uniform_float('exponent', 1, [exponent]);
+            this.set_uniform_float(this.uniforms.pixelStep, 2, pixelStep);
+            this.set_uniform_float(this.uniforms.exponent, 1, [exponent]);
             this.queue_repaint();
         }
     },

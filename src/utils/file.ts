@@ -34,9 +34,7 @@ export function readRelativeFile(module: string, path: string) {
 
 /**
  * Read a shader file and split it into declarations and main code, since
- * the Cogl.Snippet for Clutter.ShaderEffect takes those parts as two
- * separate arguments (declarations for the snippet constructor, code for
- * `set_post`).
+ * Shell.GLSLEffect.add_glsl_snippet takes those parts as two separate arguments.
  *
  * @param module - `import.meta.url` of the current module.
  * @param path - File path relative to the current module.
