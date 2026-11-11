@@ -31,7 +31,7 @@ export function enableEffect() {
     logDebug(`Initial window count: ${windowActors.length}`);
     for (const actor of windowActors) {
         if (hasMetaWindow(actor)) {
-            applyEffectTo(actor);
+            watchActor(actor);
         }
     }
 
@@ -41,17 +41,7 @@ export function enableEffect() {
         'window-created',
         (_: Meta.Display, win: Meta.Window) => {
             const actor: RoundedWindowActor = win.get_compositor_private();
-
-            // If wm_class_instance of Meta.Window is null, wait for it to be
-            // set before applying the effect.
-            if (win?.wmClass === null) {
-                const notifyId = win.connect('notify::wm-class', () => {
-                    applyEffectTo(actor);
-                    win.disconnect(notifyId);
-                });
-            } else {
-                applyEffectTo(actor);
-            }
+            watchActor(actor);
         },
     );
 
@@ -84,6 +74,17 @@ export function disableEffect() {
 }
 
 const connections: {object: GObject.Object; id: number}[] = [];
+const initializedActors = new WeakSet<RoundedWindowActor>();
+
+/** Watch readiness as well as windows that already have a texture. */
+function watchActor(actor: RoundedWindowActor) {
+    // Electron/Wayland windows can already have children while their texture
+    // or geometry is not ready. Retry/refresh after Mutter draws a frame.
+    connect(actor, 'first-frame', () => applyEffectTo(actor));
+    // The application ID can arrive before or after the first frame.
+    connect(actor.metaWindow, 'notify::wm-class', () => applyEffectTo(actor));
+    applyEffectTo(actor);
+}
 
 /**
  * Connect a callback to an object signal and add it to the list of all
@@ -142,22 +143,23 @@ function disconnectAll(object?: GObject.Object | null) {
  * @param actor - The window actor to apply the effect to.
  */
 function applyEffectTo(actor: RoundedWindowActor) {
-    // In wayland sessions, the surface actor of XWayland clients is sometimes
-    // not ready when the window is created. In this case, we wait until it is
-    // ready before applying the effect.
-    if (!actor.firstChild) {
-        const id = actor.connect('notify::first-child', () => {
-            applyEffectTo(actor);
-            actor.disconnect(id);
-        });
-
+    if (
+        actor.is_destroyed() ||
+        !actor.metaWindow ||
+        actor.metaWindow.wmClass === null
+    ) {
+        return;
+    }
+    if (initializedActors.has(actor)) {
+        handlers.onSizeChanged(actor);
         return;
     }
 
     const texture = actor.get_texture();
-    if (!texture) {
+    if (!(actor.firstChild && texture)) {
         return;
     }
+    initializedActors.add(actor);
 
     // Window resized.
     //
@@ -207,6 +209,7 @@ function applyEffectTo(actor: RoundedWindowActor) {
  * @param actor - The window actor to remove the effect from.
  */
 function removeEffectFrom(actor: Meta.WindowActor) {
+    initializedActors.delete(actor as RoundedWindowActor);
     disconnectAll(actor);
     disconnectAll(actor.metaWindow);
 
